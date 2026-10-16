@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Barra de Tostadas · Three.js</title>
+  </head>
+  <body>
+    <canvas id="webgl"></canvas>
+    <div id="loader">
+      <div class="bar"><span></span></div>
+      <p>Calentando la tostadora…</p>
+    </div>
+    <div id="hud">
+      <h1>Barra de Tostadas</h1>
+      <p>Arrastra para orbitar · rueda para zoom</p>
+    </div>
+    <div id="credits">
+      <div id="credits-panel" aria-hidden="true">
+        <img src="/src/assets/perfil.jpg" alt="Foto de perfil" />
+        <div>
+          <strong>nikocrow</strong>
+          <p>Diseño, modelado y desarrollo</p>
+          <a href="https://nikocrow.dev" target="_blank" rel="noopener" tabindex="-1">nikocrow.dev ↗</a>
+          <p class="tech">Hecho con Three.js</p>
+        </div>
+      </div>
+      <button id="credits-btn" type="button" aria-expanded="false" aria-controls="credits-panel">Créditos</button>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
