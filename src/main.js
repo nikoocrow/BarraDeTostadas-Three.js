@@ -11,6 +11,7 @@ import { createToastMaterial, toastBurn } from './toastMaterial.js';
 import { TriangleEmitter, ParticleSystem } from './particles.js';
 import { createSmokeMaterial } from './smokeMaterial.js';
 import { createLightBeam } from './lightBeam.js';
+import { createScreen } from './screen.js';
 
 const FPS = 24;
 const LOOP_FRAMES = 200;
@@ -156,6 +157,7 @@ let mixer;
 let sparks;
 let smoke;
 let toastSmoke;
+let screen; // texto animado del monitor
 
 // Emisor puntual que sigue a la tostada que está cruzando el haz; el humo sale en la dirección del haz
 const toastSmokeEmitter = {
@@ -194,6 +196,8 @@ async function init() {
     if (e.total) setProgress(e.loaded / e.total);
   });
   const model = gltf.scene;
+  let monitorScreen = null;
+  let monitorText = null;
 
   model.traverse((o) => {
     if (!o.isMesh) return;
@@ -202,6 +206,8 @@ async function init() {
     const name = o.material?.name;
 
     if (name === 'Monitor') o.material = monitorMat;
+    if (o.name === 'EX_Cube002_1') monitorScreen = o; // pantalla vertical del monitor
+    if (o.name === 'EX_Text') { monitorText = o; o.visible = false; } // se reemplaza por la pantalla animada
     if (name === 'floor') {
       bowl = o;
       o.material.side = THREE.DoubleSide;
@@ -221,6 +227,21 @@ async function init() {
     }
   });
   scene.add(model);
+
+  // Pantalla animada: ocupa la pantalla del monitor, justo delante del texto original (mira hacia -X)
+  model.updateMatrixWorld(true);
+  const screenBox = new THREE.Box3().setFromObject(monitorScreen ?? monitorText ?? model);
+  const screenSize = screenBox.getSize(new THREE.Vector3());
+  const screenCenter = screenBox.getCenter(new THREE.Vector3());
+  screenCenter.x = (monitorText ? new THREE.Box3().setFromObject(monitorText).min.x : screenBox.min.x) - 0.004;
+  screen = createScreen({
+    center: screenCenter,
+    width: monitorScreen ? screenSize.z * 0.94 : 1.5,
+    height: monitorScreen ? screenSize.y * 0.94 : 1.18,
+    color: lin(0.04, 0.32, 1.0), // azul saturado: con poco rojo/verde no se lava a blanco al brillar
+    intensity: 12,
+  });
+  scene.add(screen.mesh);
 
   // Animaciones: se desplazan para que el frame 1 sea t=0 y el ciclo dure exactamente 200 frames
   mixer = new THREE.AnimationMixer(model);
@@ -332,6 +353,9 @@ function buildGUI() {
     beam.uniforms.uColor.value.set(v);
     beam.spot.color.set(v);
   });
+  const fscreen = gui.addFolder('Pantalla');
+  fscreen.add(screen.uniforms.uIntensity, 'value', 0, 30, 0.1).name('Brillo texto');
+  fscreen.addColor(screen.uniforms.uColor, 'value').name('Color texto');
   const fb = gui.addFolder('Bloom');
   fb.add(bloom, 'strength', 0, 3, 0.01);
   fb.add(bloom, 'threshold', 0, 5, 0.01);
@@ -427,6 +451,7 @@ function tick() {
     updateToastSmoke(dt);
     smoke.mesh.material.userData.uniforms.uTime.value += dt;
     beam.uniforms.uTime.value += dt;
+    screen.update(dt);
   }
   controls.update();
   constrainCamera();
