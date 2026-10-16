@@ -47,7 +47,7 @@ npm run preview   # sirve el build localmente
 
 ```
 ToastBar/
-├── index.html              # canvas, loader, HUD y créditos
+├── index.html              # canvas, loader, HUD, créditos y estilos
 ├── public/
 │   ├── favicon.svg
 │   └── models/
@@ -59,7 +59,6 @@ ToastBar/
     ├── particles.js        # emisor por triángulos y sistema de partículas instanciado
     ├── smokeMaterial.js    # material de humo translúcido con ruido
     ├── lightBeam.js        # haz de luz volumétrico + SpotLight
-    ├── style.css
     └── assets/perfil.jpg
 ```
 

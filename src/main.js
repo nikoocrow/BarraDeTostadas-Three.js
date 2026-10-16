@@ -1,4 +1,3 @@
-import './style.css';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -8,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import GUI from 'lil-gui';
-import { createToastMaterial } from './toastMaterial.js';
+import { createToastMaterial, toastBurn } from './toastMaterial.js';
 import { TriangleEmitter, ParticleSystem } from './particles.js';
 import { createSmokeMaterial } from './smokeMaterial.js';
 import { createLightBeam } from './lightBeam.js';
@@ -23,6 +22,7 @@ const params = {
   paused: false,
   lightScale: 1,
   particles: true,
+  toastSmoke: true,
   autoRotate: false,
 };
 
@@ -155,6 +155,18 @@ let bowl = null; // malla 'Circle' (el cuenco donde vive la escena)
 let mixer;
 let sparks;
 let smoke;
+let toastSmoke;
+
+// Emisor puntual que sigue a la tostada que está cruzando el haz; el humo sale en la dirección del haz
+const toastSmokeEmitter = {
+  point: new THREE.Vector3(),
+  dir: new THREE.Vector3(),
+  sample(pos, nrm) {
+    pos.copy(this.point);
+    pos.x += (Math.random() - 0.5) * 0.3; pos.y += (Math.random() - 0.5) * 0.3; pos.z += (Math.random() - 0.5) * 0.3;
+    nrm.copy(this.dir);
+  },
+};
 
 async function init() {
   const data = await fetch('/models/scene-data.json').then((r) => r.json());
@@ -205,7 +217,7 @@ async function init() {
       const index = parseInt(m[1], 10);
       o.material = createToastMaterial(Math.random() * 10);
       o.material.shadowSide = THREE.DoubleSide;
-      toasts.push({ index, uniforms: o.material.userData.uniforms });
+      toasts.push({ index, uniforms: o.material.userData.uniforms, mesh: o, inBeam: false, smokeT: 0, smokeAcc: 0 });
     }
   });
   scene.add(model);
@@ -266,6 +278,30 @@ async function init() {
   });
   scene.add(smoke.mesh);
 
+  // Partículas: humo horizontal que suelta cada tostada al cruzar el haz de luz.
+  // Mismo material que el humo de arriba; se emite a mano desde la posición de la tostada (rate 0).
+  toastSmoke = new ParticleSystem({
+    emitter: toastSmokeEmitter,
+    max: 900,
+    rate: 0,
+    clusterSize: 5,
+    clusterSpread: 0.14,
+    clusterLifeJitter: 0.3,
+    life: 40 / FPS,
+    lifeRandom: 0.5,
+    normalVelocity: 1.4,    // empuje inicial en la dirección del haz
+    randomVelocity: 0.2,
+    acceleration: beam.direction.clone().multiplyScalar(0.8).add(new THREE.Vector3(0, 0.25, 0)),
+    size: 0.16,
+    sizeRandom: 0.45,
+    grow: 1.1,
+    fadeIn: 0.1,
+    fadeOut: 0.4,
+    geometry: new THREE.IcosahedronGeometry(1, 2),
+    material: smoke.mesh.material,
+  });
+  scene.add(toastSmoke.mesh);
+
   buildGUI();
   loaderEl.classList.add('done');
   tick();
@@ -278,6 +314,7 @@ function buildGUI() {
   gui.add(params, 'paused').name('Pausa');
   gui.add(params, 'autoRotate').name('Auto-rotar').onChange((v) => { controls.autoRotate = v; });
   gui.add(renderer, 'toneMappingExposure', 0.2, 3, 0.01).name('Exposición');
+  gui.add(toastBurn, 'value', 0, 1, 0.01).name('Tostado');
   gui.add(params, 'lightScale', 0.1, 4, 0.01).name('Intensidad luces').onChange(applyLightScale);
   gui.add(scene, 'environmentIntensity', 0, 3, 0.01).name('Ambiente');
   gui.add(smoke.mesh.material.userData.uniforms.uOpacity, 'value', 0, 1, 0.01).name('Densidad humo');
@@ -285,7 +322,9 @@ function buildGUI() {
   gui.add(params, 'particles').name('Partículas').onChange((v) => {
     sparks.mesh.visible = v;
     smoke.mesh.visible = v;
+    toastSmoke.mesh.visible = v;
   });
+  gui.add(params, 'toastSmoke').name('Humo al tostar');
   const fbeam = gui.addFolder('Haz de luz');
   fbeam.add(beam.uniforms.uIntensity, 'value', 0, 3, 0.01).name('Intensidad haz');
   fbeam.add(beam.spot, 'intensity', 0, 100, 0.1).name('Luz sobre panes');
@@ -348,6 +387,27 @@ function updateToasts() {
   }
 }
 
+// Cada tostada suelta una ráfaga de humo al entrar en el haz y sigue humeando mientras lo cruza
+const TOAST_SMOKE_RATE = 30;   // grupos por segundo por tostada
+const TOAST_SMOKE_BURST = 0.6; // segundos que sigue humeando tras entrar
+const _toastPos = new THREE.Vector3();
+function updateToastSmoke(dt) {
+  toastSmokeEmitter.dir.copy(beam.direction);
+  for (const t of toasts) {
+    t.mesh.getWorldPosition(_toastPos);
+    const inside = beam.contains(_toastPos, 0.25);
+    if (inside && !t.inBeam) t.smokeT = TOAST_SMOKE_BURST;
+    t.inBeam = inside;
+    if (inside) t.smokeT = Math.max(t.smokeT, 0.1);
+    if (t.smokeT <= 0 || !params.toastSmoke) continue;
+    t.smokeT -= dt;
+    t.smokeAcc += TOAST_SMOKE_RATE * dt;
+    toastSmokeEmitter.point.copy(_toastPos);
+    while (t.smokeAcc >= 1) { toastSmoke.spawn(); t.smokeAcc -= 1; }
+  }
+  toastSmoke.update(dt);
+}
+
 const fpsEl = document.createElement('div');
 fpsEl.style.cssText = 'position:fixed;left:12px;top:12px;font:12px monospace;color:#fff;background:rgba(0,0,0,.45);padding:4px 8px;border-radius:4px;z-index:5';
 document.body.appendChild(fpsEl);
@@ -364,6 +424,7 @@ function tick() {
     updateToasts();
     sparks.update(dt);
     smoke.update(dt);
+    updateToastSmoke(dt);
     smoke.mesh.material.userData.uniforms.uTime.value += dt;
     beam.uniforms.uTime.value += dt;
   }
@@ -381,6 +442,7 @@ window.addEventListener('resize', () => {
 
 init().catch((err) => {
   console.error(err);
+  loaderEl.classList.add('error');
   document.querySelector('#loader p').textContent = 'Error cargando la escena: ' + err.message;
 });
 

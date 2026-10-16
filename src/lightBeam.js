@@ -104,5 +104,17 @@ export function createLightBeam({
   spot.shadow.camera.near = 0.05;
   spot.name = 'BeamSpot';
 
-  return { mesh, spot, uniforms };
+  // ¿Está un punto (en mundo) dentro del haz? margin agranda la sección para objetos con volumen
+  const inv = new THREE.Matrix4();
+  const lp = new THREE.Vector3();
+  function contains(point, margin = 0) {
+    mesh.updateMatrixWorld();
+    lp.copy(point).applyMatrix4(inv.copy(mesh.matrixWorld).invert());
+    const s = lp.x / length;
+    if (s < 0 || s > 1) return false;
+    return Math.abs(lp.y) <= THREE.MathUtils.lerp(startHalfHeight, endHalfHeight, s) + margin
+        && Math.abs(lp.z) <= THREE.MathUtils.lerp(startHalfWidth, endHalfWidth, s) + margin;
+  }
+
+  return { mesh, spot, uniforms, contains, direction: direction.clone().normalize() };
 }

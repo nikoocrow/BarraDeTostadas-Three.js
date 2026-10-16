@@ -5,12 +5,90 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Barra de Tostadas · Three.js</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #2a1a0c; font-family: "Share Tech", system-ui, -apple-system, "Segoe UI", sans-serif; }
+      #webgl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+
+      /* ---------- Loader ---------- */
+      #loader { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; gap: 18px; align-items: center; justify-content: center; padding: 24px; text-align: center;
+        background: radial-gradient(ellipse at center, #3d2612 0%, #2a1a0c 60%, #1c1108 100%); color: #ffd9b0; transition: opacity .8s ease; }
+      #loader.done { opacity: 0; pointer-events: none; }
+      #loader .spinner { position: relative; width: 64px; height: 64px; }
+      #loader .spinner::before, #loader .spinner::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 4px solid transparent; }
+      #loader .spinner::before { border-top-color: #ff5a1f; border-right-color: #ff5a1f; animation: spin 1s linear infinite; }
+      #loader .spinner::after { inset: 10px; border-bottom-color: #00a0ff; border-left-color: #00a0ff; animation: spin 1.4s linear infinite reverse; }
+      #loader .spinner span { position: absolute; inset: 22px; border-radius: 50%; background: #ffb27a; box-shadow: 0 0 16px #ff5a1f; animation: glow 1.2s ease-in-out infinite alternate; }
+      #loader .bar { width: 220px; height: 6px; border-radius: 6px; background: #4a2c14; overflow: hidden; }
+      #loader .bar span { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #ff5a1f, #00a0ff); transition: width .2s; }
+      #loader p { font-size: 14px; letter-spacing: .06em; opacity: .9; max-width: 420px; }
+      #loader.error .spinner, #loader.error .bar { display: none; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes glow { from { opacity: .5; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
+
+      /* Aviso cuando se abre el archivo directamente (file://) sin servidor de Vite */
+      #no-server { display: none; max-width: 460px; padding: 22px 26px; border-radius: 14px; background: rgba(0,0,0,.28); border: 1px solid rgba(255,217,176,.2); text-align: left; line-height: 1.5; }
+      #no-server h2 { font-size: 18px; letter-spacing: .06em; text-transform: uppercase; color: #fff3e6; margin-bottom: 8px; }
+      #no-server p { font-size: 14px; opacity: .85; max-width: none; letter-spacing: 0; }
+      #no-server pre { margin: 14px 0; padding: 12px 14px; border-radius: 8px; background: #1c1108; color: #ffb27a; font: 13px/1.6 ui-monospace, Consolas, monospace; overflow-x: auto; }
+      #no-server pre .c { color: #8f7458; }
+      .file-mode #loader .spinner, .file-mode #loader .bar, .file-mode #loader > p { display: none; }
+      .file-mode #no-server { display: block; }
+      .file-mode #hud, .file-mode #credits { display: none; }
+
+      /* ---------- HUD ---------- */
+      #hud { position: fixed; left: 24px; bottom: 22px; color: #fff3e6; text-shadow: 0 2px 10px rgba(0,0,0,.45); pointer-events: none; }
+      #hud h1 { font-size: 22px; letter-spacing: .08em; text-transform: uppercase; }
+      #hud p { font-size: 13px; opacity: .8; margin-top: 4px; }
+
+      /* ---------- Créditos ---------- */
+      #credits { position: fixed; right: 24px; bottom: 22px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 6; color: #fff3e6; }
+      #credits-btn { font: inherit; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #fff3e6; background: rgba(42,26,12,.55); border: 1px solid rgba(255,217,176,.35); border-radius: 999px; padding: 7px 16px; cursor: pointer; backdrop-filter: blur(6px); transition: background .2s, border-color .2s; }
+      #credits-btn:hover, #credits-btn[aria-expanded="true"] { background: rgba(42,26,12,.8); border-color: #ffd9b0; }
+      #credits-panel { display: flex; gap: 12px; align-items: center; padding: 12px 16px; background: rgba(42,26,12,.8); border: 1px solid rgba(255,217,176,.25); border-radius: 12px; backdrop-filter: blur(6px); box-shadow: 0 8px 24px rgba(0,0,0,.35);
+        transform-origin: bottom right; opacity: 0; visibility: hidden; transform: translateY(12px) scale(.92); filter: blur(4px);
+        transition: opacity .25s ease, transform .35s cubic-bezier(.34,1.56,.64,1), filter .25s ease, visibility 0s linear .35s; }
+      #credits.open #credits-panel { opacity: 1; visibility: visible; transform: none; filter: none; transition-delay: 0s; }
+      #credits-panel img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #ffd9b0; transform: scale(.6) rotate(-20deg); transition: transform .5s cubic-bezier(.34,1.56,.64,1) .05s; }
+      #credits.open #credits-panel img { transform: none; }
+      #credits-panel > div > * { opacity: 0; transform: translateX(8px); transition: opacity .3s ease, transform .3s ease; }
+      #credits.open #credits-panel > div > * { opacity: 1; transform: none; }
+      #credits.open #credits-panel > div > :nth-child(1) { transition-delay: .08s; }
+      #credits.open #credits-panel > div > :nth-child(2) { transition-delay: .14s; }
+      #credits.open #credits-panel > div > :nth-child(3) { transition-delay: .2s; }
+      #credits.open #credits-panel > div > :nth-child(4) { transition-delay: .26s; }
+      #credits-panel strong { font-size: 15px; letter-spacing: .04em; }
+      #credits-panel p { font-size: 12px; opacity: .8; margin-top: 2px; }
+      #credits-panel .tech { opacity: .55; }
+      #credits-panel a { display: inline-block; margin-top: 4px; font-size: 12px; color: #ffb27a; text-decoration: none; border-bottom: 1px solid transparent; }
+      #credits-panel a:hover { border-bottom-color: currentColor; }
+
+      @media (prefers-reduced-motion: reduce) {
+        #loader .spinner::before, #loader .spinner::after, #loader .spinner span { animation-duration: 3s; }
+        #credits-panel, #credits-panel img, #credits-panel > div > * { transition-duration: .01s !important; transition-delay: 0s !important; }
+      }
+    </style>
+    <script>
+      // Abierto con doble clic (file://): los módulos ES no cargan sin servidor
+      if (location.protocol === 'file:') document.documentElement.classList.add('file-mode');
+    </script>
   </head>
   <body>
     <canvas id="webgl"></canvas>
     <div id="loader">
+      <div class="spinner"><span></span></div>
       <div class="bar"><span></span></div>
       <p>Calentando la tostadora…</p>
+      <div id="no-server">
+        <h2>Hace falta un servidor</h2>
+        <p>Este proyecto usa <strong>Vite</strong> y no se puede abrir con doble clic sobre <code>index.html</code>. Desde la carpeta del proyecto ejecuta:</p>
+        <pre><span class="c"># instalar dependencias (solo la primera vez)</span>
+npm install
+
+<span class="c"># iniciar el servidor de desarrollo</span>
+npm run dev</pre>
+        <p>Se abrirá el navegador en <code>http://localhost:5173</code>.</p>
+      </div>
     </div>
     <div id="hud">
       <h1>Barra de Tostadas</h1>
